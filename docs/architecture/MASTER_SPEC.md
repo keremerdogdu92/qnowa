@@ -1,4 +1,4 @@
-# Qnowa Master Architecture Specification (v1.1 - Phase 7)
+# Qnowa Master Architecture Specification (v1.2 - Phase 9)
 
 ## 1. Overview
 Qnowa is a cloud-native ERP/CRM system built with a Domain-Driven Design (DDD) approach. It features a hybrid structure where the core domain logic uses Turkish terminology (ubiquitous language of accountants) while infrastructure and systemic components use English.
@@ -16,6 +16,7 @@ Qnowa is a cloud-native ERP/CRM system built with a Domain-Driven Design (DDD) a
 - **Value Objects:** `Money`, `Address`.
 - **Key Logic:**
     - Invoices differ by `FaturaTipi` (`SATIS`/`ALIS`).
+    - **Expense Management (Giderler):** `ALIS` type invoices are treated as expenses.
     - Status flow: `TASLAK` -> `ONAYLI` -> `GONDERILDI`/`IPTAL`.
     - **XML Generation:** `UBLGenerator` service maps `Fatura` to UBL-TR 2.1 standard (GİB compliant).
 
@@ -24,6 +25,8 @@ Qnowa is a cloud-native ERP/CRM system built with a Domain-Driven Design (DDD) a
 - **Entities:** `MuhasebeFisiSatir`.
 - **Key Logic:**
     - Double-entry bookkeeping.
+    - **Sales (SATIS):** Dr: 120, Cr: 600, 391.
+    - **Expenses (ALIS):** Dr: 770 (Expense) / 153 (Inventory), 191 (VAT Rec), Cr: 320 (Payables).
     - `yevmiyeNo` (Journal Number) is assigned sequentially per `MaliDonem` (Fiscal Period).
     - `MaliDonem` manages open/closed periods to prevent data modification.
 
