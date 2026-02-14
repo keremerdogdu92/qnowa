@@ -6,8 +6,12 @@ import { useFormState, useFormStatus } from 'react-dom';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
+import { FaturaTipi } from '@/domain/invoice/Fatura';
+
 interface FaturaFormProps {
     parties: CariDTO[];
+    defaultType?: FaturaTipi;
+    fixedType?: boolean;
 }
 
 const initialState = {
@@ -28,7 +32,7 @@ function SubmitButton() {
     );
 }
 
-export function FaturaForm({ parties }: FaturaFormProps) {
+export function FaturaForm({ parties, defaultType = FaturaTipi.SATIS, fixedType = false }: FaturaFormProps) {
     const [state, formAction] = useFormState(createFatura, initialState);
     const [lines, setLines] = useState([
         { description: '', quantity: 1, unitPrice: 0, taxRate: 20, total: 0 }
@@ -116,14 +120,24 @@ export function FaturaForm({ parties }: FaturaFormProps) {
 
                 <div>
                     <label className="block text-sm font-medium text-gray-700">Fatura Tipi</label>
-                    <select
-                        name="type"
-                        required
-                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2"
-                    >
-                        <option value="SATIS">Satış Faturası</option>
-                        <option value="ALIS">Alış Faturası</option>
-                    </select>
+                    {fixedType ? (
+                        <>
+                            <input type="hidden" name="type" value={defaultType} />
+                            <div className="mt-1 block w-full p-2 bg-gray-100 border border-gray-300 rounded-md text-gray-500">
+                                {defaultType === FaturaTipi.SATIS ? 'Satış Faturası' : 'Alış Faturası'}
+                            </div>
+                        </>
+                    ) : (
+                        <select
+                            name="type"
+                            required
+                            defaultValue={defaultType}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2"
+                        >
+                            <option value="SATIS">Satış Faturası</option>
+                            <option value="ALIS">Alış Faturası</option>
+                        </select>
+                    )}
                 </div>
 
                 <input type="hidden" name="currency" value="TRY" />

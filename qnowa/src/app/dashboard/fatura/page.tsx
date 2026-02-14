@@ -3,8 +3,10 @@ import { FaturaList } from '@/presentation/components/fatura/FaturaList';
 
 export const dynamic = 'force-dynamic';
 
+import { FaturaTipi } from '@/domain/invoice/Fatura';
+
 export default async function FaturaPage() {
-    const { data: faturas } = await getFaturaList();
+    const { data: faturas } = await getFaturaList(1, 20, undefined, FaturaTipi.SATIS);
 
     return (
         <div className="p-6">

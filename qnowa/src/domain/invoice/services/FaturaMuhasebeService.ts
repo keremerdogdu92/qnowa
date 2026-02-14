@@ -36,42 +36,83 @@ export class FaturaMuhasebeService {
         });
 
         // 4. Create Journal Lines based on Invoice Type
-        // 1. Receivables (Borçlu) - 120 Alicilar
-        // TODO: Get actual account code from Party or Settings
-        const receivablesAccount = '120.01.001';
+        if (fatura.type === FaturaTipi.SATIS) {
+            // --- SATIS FATURASI (Sales Invoice) ---
+            // 1. Receivables (Borçlu) - 120 Alicilar
+            const receivablesAccount = '120.01.001'; // TODO: Dynamic from Cari
+            journal.satirEkle(MuhasebeFisiSatir.create({
+                journalId: journal.id,
+                accountId: receivablesAccount,
+                debit: fatura.grandTotal,
+                credit: Money.zero(fatura.currency),
+                sequence: 1,
+                description: `Satis Faturasi - ${fatura.faturaNo}`
+            }));
 
-        journal.satirEkle(MuhasebeFisiSatir.create({
-            journalId: journal.id,
-            accountId: receivablesAccount,
-            debit: fatura.grandTotal,
-            credit: Money.zero(fatura.currency),
-            sequence: 1,
-            description: `Satis Faturasi - ${fatura.faturaNo}`
-        }));
+            // 2. Sales Revenue (Alacaklı) - 600 Yurtici Satislar
+            const salesAccount = '600.01.001';
+            journal.satirEkle(MuhasebeFisiSatir.create({
+                journalId: journal.id,
+                accountId: salesAccount,
+                debit: Money.zero(fatura.currency),
+                credit: fatura.subTotal,
+                sequence: 2,
+                description: `Mal Satis Bedeli`
+            }));
 
-        // 2. Sales Revenue (Alacaklı) - 600 Yurtici Satislar
-        const salesAccount = '600.01.001';
+            // 3. VAT (Alacaklı) - 391 Hesaplanan KDV
+            if (fatura.taxTotal.amount > 0) {
+                const vatAccount = '391.01.001';
+                journal.satirEkle(MuhasebeFisiSatir.create({
+                    journalId: journal.id,
+                    accountId: vatAccount,
+                    debit: Money.zero(fatura.currency),
+                    credit: fatura.taxTotal,
+                    sequence: 3,
+                    description: `KDV`
+                }));
+            }
 
-        journal.satirEkle(MuhasebeFisiSatir.create({
-            journalId: journal.id,
-            accountId: salesAccount,
-            debit: Money.zero(fatura.currency),
-            credit: fatura.subTotal,
-            sequence: 2,
-            description: `Mal Satis Bedeli`
-        }));
+        } else if (fatura.type === FaturaTipi.ALIS) {
+            // --- ALIS FATURASI (Purchase Invoice) ---
+            // 1. Payables (Alacaklı) - 320 Saticilar
+            const payablesAccount = '320.01.001'; // TODO: Dynamic from Cari
+            // NOTE: Payables is Credit (Alacaklı), but in double entry it balances the expense.
 
-        // 3. VAT (Alacaklı) - 391 Hesaplanan KDV
-        if (fatura.taxTotal.amount > 0) {
-            const vatAccount = '391.01.001';
+            // 2. Expense Cost (Borçlu) - 770 Genel Yonetim Giderleri (MVP Default)
+            // Or 153 Ticari Mallar if it's inventory. For now assuming Service/General Expense.
+            const expenseAccount = '770.01.001';
 
             journal.satirEkle(MuhasebeFisiSatir.create({
                 journalId: journal.id,
-                accountId: vatAccount,
+                accountId: expenseAccount,
+                debit: fatura.subTotal,
+                credit: Money.zero(fatura.currency),
+                sequence: 1,
+                description: `Mal/Hizmet Alis Bedeli`
+            }));
+
+            // 3. VAT (Borçlu) - 191 Indirilecek KDV
+            if (fatura.taxTotal.amount > 0) {
+                const vatRecAccount = '191.01.001';
+                journal.satirEkle(MuhasebeFisiSatir.create({
+                    journalId: journal.id,
+                    accountId: vatRecAccount,
+                    debit: fatura.taxTotal,
+                    credit: Money.zero(fatura.currency),
+                    sequence: 2,
+                    description: `Indirilecek KDV`
+                }));
+            }
+
+            // 4. Payables (Alacaklı) - 320 Saticilar
+            journal.satirEkle(MuhasebeFisiSatir.create({
+                journalId: journal.id,
+                accountId: payablesAccount,
                 debit: Money.zero(fatura.currency),
-                credit: fatura.taxTotal,
+                credit: fatura.grandTotal,
                 sequence: 3,
-                description: `KDV`
+                description: `Alis Faturasi - ${fatura.faturaNo}`
             }));
         }
 

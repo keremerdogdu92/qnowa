@@ -63,7 +63,8 @@ const accountingService = new FaturaMuhasebeService(faturaRepo, journalRepo);
 export async function getFaturaList(
     page = 1,
     limit = 20,
-    status?: FaturaDurumu
+    status?: FaturaDurumu,
+    type?: FaturaTipi
 ): Promise<{ data: FaturaDTO[]; total: number }> {
     const session = await auth();
     if (!session?.user?.id || !(session.user as any).orgId) {
@@ -73,9 +74,9 @@ export async function getFaturaList(
 
     let faturas: Fatura[] = [];
     if (status) {
-        faturas = await faturaRepo.findAllByStatus(orgId, status);
+        faturas = await faturaRepo.findAllByStatus(orgId, status, type);
     } else {
-        faturas = await faturaRepo.findAll(orgId);
+        faturas = await faturaRepo.findAll(orgId, type);
     }
 
     // Map to DTO

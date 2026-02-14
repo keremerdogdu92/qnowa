@@ -66,22 +66,34 @@ export class PrismaFaturaRepository implements IFaturaRepository {
         return this.toDomain(row);
     }
 
-    async findAllByStatus(orgId: string, status: FaturaDurumu): Promise<Fatura[]> {
+    async findAllByStatus(orgId: string, status: FaturaDurumu, type?: FaturaTipi): Promise<Fatura[]> {
+        const where: any = {
+            orgId,
+            status: status as any
+        };
+        if (type) {
+            where.type = type;
+        }
+
         const rows = await prisma.fatura.findMany({
-            where: {
-                orgId,
-                status: status as any
-            },
-            include: { lines: true }
+            where,
+            include: { lines: true },
+            orderBy: { createdAt: 'desc' }
         });
 
         return rows.map((row) => this.toDomain(row));
     }
 
-    async findAll(orgId: string): Promise<Fatura[]> {
+    async findAll(orgId: string, type?: FaturaTipi): Promise<Fatura[]> {
+        const where: any = { orgId };
+        if (type) {
+            where.type = type;
+        }
+
         const rows = await prisma.fatura.findMany({
-            where: { orgId },
-            include: { lines: true }
+            where,
+            include: { lines: true },
+            orderBy: { createdAt: 'desc' }
         });
 
         return rows.map((row) => this.toDomain(row));
