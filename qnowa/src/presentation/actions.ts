@@ -31,9 +31,11 @@ export async function authenticate(
     }
 }
 
+import { TaxNumberSchema } from '@/domain/shared/validation';
+
 const RegisterSchema = z.object({
     companyName: z.string().min(2, "Firma ünvanı en az 2 karakter olmalıdır"),
-    taxNumber: z.string().length(10, "Vergi numarası 10 haneli olmalıdır").or(z.string().length(11, "TCKN 11 haneli olmalıdır")),
+    taxNumber: TaxNumberSchema,
     name: z.string().min(2, "Ad soyad en az 2 karakter olmalıdır"),
     email: z.string().email("Geçersiz email adresi"),
     password: z.string().min(6, "Şifre en az 6 karakter olmalıdır"),

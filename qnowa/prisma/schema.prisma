@@ -46,6 +46,7 @@ model User {
   image         String?
   accounts      Account[]
   sessions      Session[]
+  auditLogs     AuditLog[]
 
   // Custom fields
   orgId        String?
@@ -84,6 +85,7 @@ model Organization {
   parties  Cari[]
   journals MuhasebeFisi[]
   accounts HesapPlani[]
+  auditLogs AuditLog[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -282,4 +284,27 @@ model Outbox {
   error         String?
 
   @@index([processedAt]) // Worker looks for null processedAt
+}
+
+// ==============================
+// CROSS-CUTTING: SECURITY & AUDIT
+// ==============================
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  orgId     String
+  userId    String?
+  action    String
+  entityId  String
+  entityType String
+  details   Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  user         User?        @relation(fields: [userId], references: [id])
+
+  @@index([orgId, createdAt])
+  @@index([entityType, entityId])
 }

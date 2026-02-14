@@ -11,6 +11,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { checkPermission, Permission } from '@/domain/security/permissions';
+import { logAction } from '@/infrastructure/services/AuditService';
 
 // DTOs & Validation
 const LineItemSchema = z.object({
@@ -157,8 +158,25 @@ export async function createFatura(prevState: any, formData: FormData) {
             }
         }
 
+
+
+        // ... existing imports ...
+
+        // ... createFatura function ...
         await faturaRepo.save(fatura);
+
+        // Audit Log
+        await logAction(
+            orgId,
+            session.user.id,
+            'FATURA_CREATE',
+            'Fatura',
+            fatura.id,
+            { faturaNo, total: fatura.grandTotal.amount }
+        );
+
     } catch (e: any) {
+        // ...
         return { message: e.message || 'Fatura oluşturulurken hata oluştu.' };
     }
 
@@ -182,6 +200,16 @@ export async function finalizeFatura(id: string) {
 
         // Integration: Accounting
         await accountingService.muhasebelestir(fatura.id);
+
+        // Audit Log
+        await logAction(
+            (session.user as any).orgId,
+            session.user.id,
+            'FATURA_FINALIZE',
+            'Fatura',
+            fatura.id,
+            { faturaNo: fatura.faturaNo }
+        );
 
     } catch (e: any) {
         return { success: false, message: e.message };
