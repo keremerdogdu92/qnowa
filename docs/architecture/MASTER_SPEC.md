@@ -1,4 +1,4 @@
-# Qnowa Master Architecture Specification (v1.0 - Phase 6)
+# Qnowa Master Architecture Specification (v1.1 - Phase 7)
 
 ## 1. Overview
 Qnowa is a cloud-native ERP/CRM system built with a Domain-Driven Design (DDD) approach. It features a hybrid structure where the core domain logic uses Turkish terminology (ubiquitous language of accountants) while infrastructure and systemic components use English.
@@ -17,7 +17,7 @@ Qnowa is a cloud-native ERP/CRM system built with a Domain-Driven Design (DDD) a
 - **Key Logic:**
     - Invoices differ by `FaturaTipi` (`SATIS`/`ALIS`).
     - Status flow: `TASLAK` -> `ONAYLI` -> `GONDERILDI`/`IPTAL`.
-    - Integrates with E-Invoice providers (stubbed).
+    - **XML Generation:** `UBLGenerator` service maps `Fatura` to UBL-TR 2.1 standard (GİB compliant).
 
 ### 2.3 Accounting (Muhasebe)
 - **Aggregate:** `MuhasebeFisi` (Journal Entry).
@@ -27,11 +27,17 @@ Qnowa is a cloud-native ERP/CRM system built with a Domain-Driven Design (DDD) a
     - `yevmiyeNo` (Journal Number) is assigned sequentially per `MaliDonem` (Fiscal Period).
     - `MaliDonem` manages open/closed periods to prevent data modification.
 
+### 2.4 Cari (Current Account)
+- **Aggregate:** `Cari` (Customer/Supplier).
+- **Key Logic:** Used in Fatura and Accounting.
+- **Terminology:** `partyId` -> `cariId`.
+
 ## 3. Technical Stack
 - **Backend:** Next.js 16 (App Router, Server Actions).
 - **Database:** PostgreSQL with Prisma ORM.
 - **Testing:** Vitest (Unit & Integration).
 - **Containerization:** Docker.
+- **XML Generation:** `xmlbuilder2`.
 
 ## 4. Cross-Cutting Concerns
 - **Validation:** Zod schemas for all inputs.
@@ -47,13 +53,14 @@ src/
 ├── domain/             # Pure business logic (DDD)
 │   ├── accounting/     # Muhasebe (Turkish terms)
 │   ├── invoice/        # Fatura (Turkish terms)
+│   │   ├── services/   # incl. UBLGenerator.ts
 │   ├── identity/       # English terms (Systemic)
 │   └── core/           # Base classes (AggregateRoot, Entity, etc.)
 ├── infrastructure/     # Implementation details
 │   ├── database/       # Prisma client
 │   ├── repositories/   # Repo implementations
-│   └── services/       # External integrations
-├── presentation/       # UI & API
-    ├── components/     # React components
-    └── actions.ts      # Server Actions
+│   └── actions/        # Server Actions (API)
+├── presentation/       # UI Components
+│   ├── components/     # React components
+│   └── hooks/          # Custom hooks
 ```

@@ -1,0 +1,285 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==============================
+// IDENTITY & ACCESS (NextAuth)
+// ==============================
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+
+  // Custom fields
+  orgId        String?
+  organization Organization? @relation(fields: [orgId], references: [id])
+  role         UserRole      @default(USER)
+  hashedPassword String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+enum UserRole {
+  ADMIN
+  ACCOUNTANT
+  USER
+}
+
+model Organization {
+  id        String  @id @default(uuid())
+  name      String
+  taxNumber String  @unique
+  address   String?
+  phone     String?
+  email     String?
+
+  users    User[]
+  invoices Fatura[]
+  parties  Cari[]
+  journals MuhasebeFisi[]
+  accounts HesapPlani[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ==============================
+// CORE DOMAIN: INVOICING
+// ==============================
+
+model Fatura {
+  id           String       @id @default(uuid())
+  orgId        String
+  organization Organization @relation(fields: [orgId], references: [id])
+
+  faturaNo String // Gapless sequence managed by app logic
+  date     DateTime
+  dueDate  DateTime?
+  status   FaturaDurumu @default(TASLAK)
+  type     FaturaTipi   @default(SATIS)
+
+  cariId String
+  cari   Cari   @relation(fields: [cariId], references: [id])
+
+  lines FaturaSatir[]
+
+  // Financials
+  subTotal   Decimal @db.Decimal(18, 2)
+  taxTotal   Decimal @db.Decimal(18, 2)
+  grandTotal Decimal @db.Decimal(18, 2)
+  currency   String  @default("TRY")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, faturaNo]) // Unique per organization
+}
+
+model FaturaSatir {
+  id       String @id @default(uuid())
+  faturaId String
+  fatura   Fatura @relation(fields: [faturaId], references: [id], onDelete: Cascade)
+
+  description String
+  quantity    Decimal @db.Decimal(18, 4)
+  unitPrice   Decimal @db.Decimal(18, 2)
+  taxRate     Int
+  total       Decimal @db.Decimal(18, 2)
+}
+
+enum FaturaDurumu {
+  TASLAK
+  ONAYLI // Lawfully valid, ready to send/integrate
+  GONDERILDI // Successfully sent to integrator/GIB
+  IPTAL
+}
+
+enum FaturaTipi {
+  SATIS // Sales
+  ALIS // Purchase
+}
+
+// ==============================
+// CORE DOMAIN: PARTY (CARI)
+// ==============================
+
+model Cari {
+  id           String       @id @default(uuid())
+  orgId        String
+  organization Organization @relation(fields: [orgId], references: [id])
+
+  name      String
+  taxNumber String?
+  type      CariType
+
+  invoices Fatura[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum CariType {
+  CUSTOMER
+  SUPPLIER
+  BOTH
+}
+
+// ==============================
+// CORE DOMAIN: ACCOUNTING
+// ==============================
+
+// Muhasebe Fisi (Journal Entry)
+model MuhasebeFisi {
+  id          String   @id @default(uuid())
+  orgId       String
+  yevmiyeNo   Int // "Yevmiye Numarası" - Sequential (Gap-less)
+  date        DateTime
+  description String?
+
+  status FisDurumu @default(TASLAK)
+
+  lines MuhasebeFisiSatir[]
+
+  periodMonth Int
+  periodYear  Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id])
+
+  // Enforce unique journal number per year per org
+  @@unique([orgId, periodYear, yevmiyeNo])
+  @@index([orgId, date])
+}
+
+model YevmiyeSequence {
+  id     String @id @default(uuid())
+  orgId  String
+  year   Int
+  lastNo Int    @default(0)
+
+  // Optimistic concurrency control or just lock row
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, year])
+}
+
+model MuhasebeFisiSatir {
+  id        String @id @default(uuid())
+  journalId String
+  accountId String
+
+  description String?
+  debit       Decimal @db.Decimal(18, 2)
+  credit      Decimal @db.Decimal(18, 2)
+
+  sequence Int
+
+  journal MuhasebeFisi @relation(fields: [journalId], references: [id], onDelete: Cascade)
+  account HesapPlani   @relation(fields: [accountId], references: [id])
+
+  @@index([journalId])
+  @@index([accountId])
+}
+
+model HesapPlani {
+  id           String        @id @default(uuid())
+  orgId        String? // Null means standard/global plan
+  organization Organization? @relation(fields: [orgId], references: [id])
+
+  code       String // e.g. "100", "120.01"
+  name       String
+  parentCode String?
+
+  journalLines MuhasebeFisiSatir[]
+
+  @@unique([orgId, code])
+}
+
+enum FisDurumu {
+  TASLAK
+  ONAYLI
+}
+
+model MaliDonem {
+  id     String       @id @default(uuid())
+  orgId  String
+  year   Int
+  month  Int // 1-12
+  status DonemDurumu @default(ACIK)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, year, month])
+}
+
+enum DonemDurumu {
+  ACIK
+  GECICI_KAPALI
+  KESIN_KAPALI
+}
+
+// ==============================
+// INFRASTRUCTURE: OUTBOX
+// ==============================
+
+model Outbox {
+  id            String    @id @default(uuid())
+  aggregateId   String
+  aggregateType String // e.g. "Invoice", "Journal"
+  eventType     String // e.g. "InvoiceFinalized"
+  payload       Json
+  occurredAt    DateTime
+  processedAt   DateTime? // Null means pending
+  error         String?
+
+  @@index([processedAt]) // Worker looks for null processedAt
+}
