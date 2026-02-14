@@ -36,6 +36,11 @@ export default async function DashboardLayout({
                     <NavLink href="/dashboard/muhasebe/fisler">Fiş İşlemleri</NavLink>
                     <NavLink href="/dashboard/muhasebe/hesap-plani">Hesap Planı</NavLink>
                     <NavLink href="/dashboard/muhasebe/mizan">Mizan Raporu</NavLink>
+
+                    <div className="pt-4 pb-1">
+                        <p className="px-2 text-xs font-semibold text-gray-400 uppercase">Raporlar</p>
+                    </div>
+                    <NavLink href="/dashboard/raporlar/gelir-gider">Gelir / Gider (P&L)</NavLink>
                 </nav>
 
                 <div className="p-4 border-t">
