@@ -48,6 +48,7 @@ model User {
   sessions      Session[]
   auditLogs     AuditLog[]
 
+
   // Custom fields
   orgId        String?
   organization Organization? @relation(fields: [orgId], references: [id])
@@ -86,6 +87,9 @@ model Organization {
   journals MuhasebeFisi[]
   accounts HesapPlani[]
   auditLogs AuditLog[]
+  banks     Bank[]
+  safes     Safe[]
+  payments  Payment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -110,6 +114,7 @@ model Fatura {
   cari   Cari   @relation(fields: [cariId], references: [id])
 
   lines FaturaSatir[]
+  payments Payment[]
 
   // Financials
   subTotal   Decimal @db.Decimal(18, 2)
@@ -161,6 +166,7 @@ model Cari {
   type      CariType
 
   invoices Fatura[]
+  payments Payment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -241,6 +247,8 @@ model HesapPlani {
   parentCode String?
 
   journalLines MuhasebeFisiSatir[]
+  banks        Bank[]
+  safes        Safe[]
 
   @@unique([orgId, code])
 }
@@ -307,4 +315,81 @@ model AuditLog {
 
   @@index([orgId, createdAt])
   @@index([entityType, entityId])
+}
+
+// ==============================
+// CORE DOMAIN: FINANCE (CASH & BANK)
+// ==============================
+
+model Bank {
+  id            String   @id @default(uuid())
+  orgId         String
+  organization  Organization @relation(fields: [orgId], references: [id])
+
+  name          String
+  branch        String?
+  iban          String?
+  currency      String @default("TRY")
+  
+  accountId     String? // Link to 102.XX in HesapPlani
+  account       HesapPlani? @relation(fields: [accountId], references: [id])
+
+  payments      Payment[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Safe {
+  id            String   @id @default(uuid())
+  orgId         String
+  organization  Organization @relation(fields: [orgId], references: [id])
+
+  name          String // e.g. "Merkez TL Kasa"
+  currency      String @default("TRY")
+
+  accountId     String? // Link to 100.XX in HesapPlani
+  account       HesapPlani? @relation(fields: [accountId], references: [id])
+
+  payments      Payment[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Payment {
+  id            String   @id @default(uuid())
+  orgId         String
+  organization  Organization @relation(fields: [orgId], references: [id])
+
+  date          DateTime
+  amount        Decimal @db.Decimal(18, 2)
+  currency      String @default("TRY")
+  type          PaymentType // INCOME (Tahsilat) / EXPENSE (Odeme)
+  description   String?
+
+  // Relations
+  cariId        String?
+  cari          Cari? @relation(fields: [cariId], references: [id])
+
+  faturaId      String?
+  fatura        Fatura? @relation(fields: [faturaId], references: [id])
+
+  // Source/Target (Either Bank or Safe)
+  bankId        String?
+  bank          Bank? @relation(fields: [bankId], references: [id])
+  
+  safeId        String?
+  safe          Safe? @relation(fields: [safeId], references: [id])
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([orgId, date])
+  @@index([cariId])
+}
+
+enum PaymentType {
+  TAHSILAT // Collection (Inbound)
+  ODEME    // Payment (Outbound)
 }
