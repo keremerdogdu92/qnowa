@@ -25,6 +25,8 @@ export interface ExtractedData {
     invoiceNo?: string;
     totalAmount?: number;
     taxAmount?: number;
+    taxRate?: number; // %1, %10, %20 (Dominant rate)
+    taxes?: { rate: number; amount: number }[]; // All found tax lines
     currency?: string;
     lines?: {
         description: string;

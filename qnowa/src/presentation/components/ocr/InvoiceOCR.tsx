@@ -9,31 +9,63 @@ import { ExtractedData } from '@/domain/ocr/OCRInterfaces';
 import { Loader2, Upload, CheckCircle, AlertTriangle, Save, RefreshCw } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
+import imageCompression from 'browser-image-compression';
+import Tesseract from 'tesseract.js';
 
 export function InvoiceOCR() {
     const router = useRouter();
     const [file, setFile] = useState<File | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [isCompressing, setIsCompressing] = useState(false);
+    const [ocrProgress, setOcrProgress] = useState(0);
     const [isSaving, setIsSaving] = useState(false);
     const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [parties, setParties] = useState<CariDTO[]>([]);
 
-    const { register, handleSubmit, setValue, reset } = useForm<ExtractedData & { cariId: string }>();
+    const { register, handleSubmit, setValue, reset, watch } = useForm<ExtractedData & { cariId: string }>();
+    const currentDocType = watch('documentType');
 
     useEffect(() => {
         getParties().then(setParties);
     }, []);
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
-            const selectedFile = e.target.files[0];
-            setFile(selectedFile);
+            let selectedFile = e.target.files[0];
+
+            // Preview immediately
             setPreviewUrl(URL.createObjectURL(selectedFile));
             setExtractedData(null);
             setError(null);
             reset();
+
+            // Compress if image
+            if (selectedFile.type.startsWith('image/')) {
+                setIsCompressing(true);
+                try {
+                    const options = {
+                        maxSizeMB: 0.8, // Target slightly under 1MB to be safe
+                        maxWidthOrHeight: 1920,
+                        useWebWorker: true
+                    };
+                    const compressedFile = await imageCompression(selectedFile, options);
+                    console.log(`Compressed: ${(selectedFile.size / 1024 / 1024).toFixed(2)}MB -> ${(compressedFile.size / 1024 / 1024).toFixed(2)}MB`);
+
+                    // Rename to original name but keep reference
+                    const newFile = new File([compressedFile], selectedFile.name, { type: selectedFile.type });
+                    setFile(newFile);
+                } catch (error) {
+                    console.error("Compression failed:", error);
+                    // Fallback to original
+                    setFile(selectedFile);
+                } finally {
+                    setIsCompressing(false);
+                }
+            } else {
+                setFile(selectedFile);
+            }
         }
     };
 
@@ -42,10 +74,40 @@ export function InvoiceOCR() {
 
         setIsAnalyzing(true);
         setError(null);
+        setOcrProgress(0);
 
         try {
+            let clientText = '';
+
+            // 1. Client-Side OCR (Only for images, not PDF yet)
+            if (file.type.startsWith('image/')) {
+                try {
+                    console.log("Starting Client-Side OCR...");
+                    const { data: { text } } = await Tesseract.recognize(
+                        file,
+                        'tur',
+                        {
+                            logger: m => {
+                                if (m.status === 'recognizing text') {
+                                    setOcrProgress(Math.round(m.progress * 100));
+                                }
+                            }
+                        }
+                    );
+                    clientText = text;
+                    console.log("Client OCR Complete:", text.substring(0, 100) + "...");
+                } catch (clientError) {
+                    console.error("Client OCR Failed:", clientError);
+                    // Continue to server even if client fails
+                }
+            }
+
+            // 2. Send to Server (with clientText if available)
             const formData = new FormData();
             formData.append('file', file);
+            if (clientText) {
+                formData.append('clientText', clientText);
+            }
 
             const result = await parseInvoiceAction(formData);
 
@@ -53,12 +115,20 @@ export function InvoiceOCR() {
                 setExtractedData(result.data);
                 // Pre-fill form
                 setValue('senderName', result.data.senderName);
-                setValue('invoiceNo', result.data.invoiceNo);
-                // Date handling: extracted date might be Date object or string from JSON serialization
-                const dateVal = result.data.date ? new Date(result.data.date).toISOString().split('T')[0] : '';
-                setValue('date', dateVal as any);
+                setValue('invoiceNo', result.data.invoiceNo || '');
+                if (result.data.taxes) {
+                    setValue('taxes', result.data.taxes);
+                }
+                if (result.data.date) {
+                    const d = new Date(result.data.date);
+                    const localDate = d.toLocaleDateString('en-CA'); // YYYY-MM-DD format
+                    setValue('date', localDate as any);
+                } else {
+                    setValue('date', '' as any);
+                }
                 setValue('totalAmount', result.data.totalAmount);
                 setValue('taxAmount', result.data.taxAmount);
+                setValue('taxRate', result.data.taxRate);
                 setValue('currency', result.data.currency);
                 if (result.data.documentType) {
                     setValue('documentType', result.data.documentType);
@@ -67,8 +137,8 @@ export function InvoiceOCR() {
                 }
 
                 // Auto-match Cari
-                if (result.data.senderName) {
-                    const match = parties.find(p => p.name.toLowerCase().includes(result.data.senderName!.toLowerCase()));
+                if (result.data?.senderName) {
+                    const match = parties.find(p => p.name.toLowerCase().includes(result.data!.senderName!.toLowerCase()));
                     if (match) {
                         setValue('cariId', match.id);
                     }
@@ -80,6 +150,7 @@ export function InvoiceOCR() {
             setError(err.message);
         } finally {
             setIsAnalyzing(false);
+            setOcrProgress(0);
         }
     };
 
@@ -134,21 +205,23 @@ export function InvoiceOCR() {
                 </h2>
 
                 <div className="mb-4">
-                    <input
-                        type="file"
-                        accept="image/*,.pdf"
-                        onChange={handleFileChange}
-                        className="block w-full text-sm text-gray-500
-                            file:mr-4 file:py-2 file:px-4
-                            file:rounded-full file:border-0
-                            file:text-sm file:font-semibold
-                            file:bg-blue-50 file:text-blue-700
-                            hover:file:bg-blue-100"
-                    />
+                    <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
+                        <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                            <Upload className="w-8 h-8 mb-2 text-gray-500" />
+                            <p className="mb-2 text-sm text-gray-500"><span className="font-semibold">Yüklemek için dokunun</span> veya sürükleyin</p>
+                            <p className="text-xs text-gray-500">PNG, JPG veya PDF</p>
+                        </div>
+                        <input
+                            type="file"
+                            className="hidden"
+                            accept="image/*,.pdf"
+                            onChange={handleFileChange}
+                        />
+                    </label>
                 </div>
 
                 {previewUrl && (
-                    <div className="relative flex-grow border-2 border-dashed border-gray-300 rounded-lg overflow-hidden bg-gray-50 flex items-center justify-center min-h-[400px]">
+                    <div className="relative flex-grow border-2 border-dashed border-gray-300 rounded-lg overflow-hidden bg-gray-50 flex items-center justify-center min-h-[300px] lg:min-h-[400px]">
                         {file?.type.startsWith('image/') ? (
                             <img src={previewUrl} alt="Fatura Önizleme" className="max-w-full max-h-full object-contain" />
                         ) : (
@@ -160,13 +233,18 @@ export function InvoiceOCR() {
                 <div className="mt-4">
                     <button
                         onClick={handleAnalyze}
-                        disabled={!file || isAnalyzing}
+                        disabled={!file || isAnalyzing || isCompressing}
                         className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center"
                     >
-                        {isAnalyzing ? (
+                        {isCompressing ? (
                             <>
                                 <Loader2 className="animate-spin mr-2" />
-                                Analiz Ediliyor...
+                                Optimize Ediliyor...
+                            </>
+                        ) : isAnalyzing ? (
+                            <>
+                                <Loader2 className="animate-spin mr-2" />
+                                {ocrProgress > 0 && ocrProgress < 100 ? `Okunuyor... %${ocrProgress}` : 'Analiz Ediliyor...'}
                             </>
                         ) : (
                             'Analiz Et (Yapay Zeka)'
@@ -257,7 +335,7 @@ export function InvoiceOCR() {
                         <label className="block text-sm font-medium text-gray-700">Tedarikçi Adı (OCR'dan Gelen)</label>
                         <input
                             {...register('senderName')}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2 bg-gray-50"
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2 bg-gray-50 text-gray-900 font-medium"
                             placeholder="Otomatik Okunacak"
                             readOnly
                         />
@@ -265,10 +343,12 @@ export function InvoiceOCR() {
 
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700">Fatura No</label>
+                            <label className="block text-sm font-medium text-gray-700">
+                                {['FIS', 'CEK'].includes(currentDocType || '') ? 'Fiş/Belge No' : 'Fatura No'}
+                            </label>
                             <input
                                 {...register('invoiceNo')}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2"
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2 text-gray-900 font-medium"
                             />
                         </div>
                         <div>
@@ -276,7 +356,7 @@ export function InvoiceOCR() {
                             <input
                                 type="date"
                                 {...register('date')}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2"
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2 text-gray-900 font-medium"
                             />
                         </div>
                     </div>
@@ -288,28 +368,60 @@ export function InvoiceOCR() {
                                 type="number"
                                 step="0.01"
                                 {...register('totalAmount')}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2 font-bold"
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2 font-bold text-gray-900"
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700">KDV</label>
+                            <label className="block text-sm font-medium text-gray-700">KDV Tutarı</label>
                             <input
                                 type="number"
                                 step="0.01"
                                 {...register('taxAmount')}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2"
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2 text-gray-900"
                             />
                         </div>
+                    </div>
+
+
+
+                    {/* Tax Breakdown Table */}
+                    {extractedData?.taxes && extractedData.taxes.length > 0 && (
+                        <div className="mt-4 border-t pt-4">
+                            <h4 className="text-sm font-medium text-gray-700 mb-2">Bulunan KDV Detayları</h4>
+                            <table className="min-w-full divide-y divide-gray-200 text-sm">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-3 py-2 text-left font-medium text-gray-500">Oran</th>
+                                        <th className="px-3 py-2 text-right font-medium text-gray-500">Tutar</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {extractedData.taxes.map((tax, index) => (
+                                        <tr key={index}>
+                                            <td className="px-3 py-2 text-gray-900 font-medium">%{tax.rate}</td>
+                                            <td className="px-3 py-2 text-right text-gray-900">{tax.amount.toFixed(2)} ₺</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                            <p className="text-xs text-gray-500 mt-1">* Bu değerler otomatik okunmuştur, lütfen kontrol ediniz.</p>
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-4 mt-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700">Para Birimi</label>
-                            <select
-                                {...register('currency')}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2"
-                            >
-                                <option value="TRY">TRY</option>
-                                <option value="USD">USD</option>
-                                <option value="EUR">EUR</option>
-                            </select>
+                            <label className="block text-sm font-medium text-gray-700">KDV Oranı (%)</label>
+                            <input
+                                type="number"
+                                step="1"
+                                placeholder="%1, 10, 20"
+                                {...register('taxRate')}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2 text-gray-900"
+                            />
+                        </div>
+                        <div className="hidden">
+                            {/* Currency Hidden - Default TRY */}
+                            <input type="hidden" {...register('currency')} value="TRY" />
                         </div>
                     </div>
 
@@ -342,7 +454,24 @@ export function InvoiceOCR() {
                         </button>
                     </div>
                 </form>
-            </div>
-        </div>
+
+                {/* Debug Section */}
+                {
+                    extractedData?.rawText && (
+                        <div className="mt-8 border-t pt-4">
+                            <details className="group">
+                                <summary className="flex items-center cursor-pointer text-sm font-medium text-gray-500 hover:text-gray-700">
+                                    <span>🔍 Geliştirici Modu: Ham OCR Metni</span>
+                                    <span className="ml-2 text-xs text-gray-400">(Tesseract ne okudu?)</span>
+                                </summary>
+                                <div className="mt-2 p-3 bg-gray-900 text-green-400 text-xs font-mono rounded overflow-auto max-h-60 whitespace-pre-wrap">
+                                    {extractedData.rawText}
+                                </div>
+                            </details>
+                        </div>
+                    )
+                }
+            </div >
+        </div >
     );
 }

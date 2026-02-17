@@ -19,9 +19,18 @@ export async function parseInvoiceAction(formData: FormData): Promise<{ success:
         // 2. Initialise Router
         const router = new SmartOCRRouter();
 
-        // 3. Route and Parse (Smart Decision: Tesseract vs Azure)
-        console.log(`Processing file: ${file.name}, Size: ${file.size} bytes`);
-        const result = await router.routeAndParse(buffer, file.size);
+        // 3. Check if client already did the OCR
+        const clientText = formData.get('clientText') as string;
+
+        let result;
+        if (clientText) {
+            console.log(`Using Client-Side OCR Result (${clientText.length} chars)`);
+            result = await router.parseFromText(clientText, buffer, file.size);
+        } else {
+            // Fallback to Server-Side OCR
+            console.log(`Processing file on Server: ${file.name}, Size: ${file.size} bytes`);
+            result = await router.routeAndParse(buffer, file.size);
+        }
 
         return { success: true, data: result };
 
