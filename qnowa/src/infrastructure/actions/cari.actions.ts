@@ -36,6 +36,19 @@ export async function getParties(): Promise<CariDTO[]> {
     }));
 }
 
+export async function getCariList(page = 1, limit = 100): Promise<{ data: CariDTO[], total: number }> {
+    // Re-using logic, or making it distinct if pagination needed
+    // For now, wrapping getParties
+    const allParties = await getParties();
+    // Slice for pagination mock
+    const start = (page - 1) * limit;
+    const end = start + limit;
+    return {
+        data: allParties.slice(start, end),
+        total: allParties.length
+    };
+}
+
 import { z } from 'zod';
 import { TaxNumberSchema } from '@/domain/shared/validation';
 import { logAction } from '@/infrastructure/services/AuditService';

@@ -27,6 +27,7 @@ export const authConfig = {
                 session.user.id = token.sub;
                 (session.user as any).orgId = token.orgId;
                 (session.user as any).role = token.role;
+                (session.user as any).permissions = token.permissions;
             }
             return session;
         },
@@ -34,6 +35,7 @@ export const authConfig = {
             if (user) {
                 token.orgId = (user as any).orgId;
                 token.role = (user as any).role;
+                token.permissions = (user as any).permissions;
             }
             if (trigger === "update" && session) {
                 return { ...token, ...session.user };

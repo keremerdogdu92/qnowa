@@ -10,8 +10,17 @@ async function getUser(email: string) {
     try {
         const user = await prisma.user.findUnique({
             where: { email },
+            include: {
+                userRole: {
+                    include: {
+                        permissions: {
+                            include: { permission: true }
+                        }
+                    }
+                }
+            }
         });
-        return user;
+        return user as any;
     } catch (error) {
         console.error('Failed to fetch user:', error);
         throw new Error('Failed to fetch user.');
@@ -43,7 +52,18 @@ export const { auth, signIn, signOut, handlers } = NextAuth({
                     if (!user.hashedPassword) return null; // User might be OAuth only?
 
                     const passwordsMatch = await bcrypt.compare(password, user.hashedPassword);
-                    if (passwordsMatch) return user;
+                    if (passwordsMatch) {
+                        const u = user as any;
+                        // Flatten permissions
+                        const permissions = u.userRole?.permissions.map((p: any) => p.permission.key) || [];
+                        const roleName = u.userRole?.name || u.role; // Fallback to enum if no dynamic role
+
+                        return {
+                            ...user,
+                            role: roleName,
+                            permissions: permissions
+                        };
+                    }
                 }
 
                 console.log('Invalid credentials');

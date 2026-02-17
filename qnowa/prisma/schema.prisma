@@ -52,7 +52,12 @@ model User {
   // Custom fields
   orgId        String?
   organization Organization? @relation(fields: [orgId], references: [id])
-  role         UserRole      @default(USER)
+  
+  // RBAC
+  role         UserRole      @default(USER) // Deprecated, keep for backward compat/migration
+  roleId       String?
+  userRole     Role?         @relation(fields: [roleId], references: [id])
+ 
   hashedPassword String?
 
   createdAt DateTime @default(now())
@@ -73,6 +78,43 @@ enum UserRole {
   USER
 }
 
+model Role {
+  id            String   @id @default(uuid())
+  orgId         String
+  organization  Organization @relation(fields: [orgId], references: [id])
+  
+  name          String   // e.g. "Mali Müşavir", "Depo Sorumlusu"
+  description   String?
+  isSystem      Boolean  @default(false) // If true, cannot be deleted (e.g. Admin)
+
+  users         User[]
+  permissions   RolePermission[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([orgId, name])
+}
+
+model Permission {
+  id            String   @id @default(uuid())
+  key           String   @unique // e.g. "INVOICE_CREATE", "CHEQUE_View"
+  description   String?
+  group         String   // e.g. "INVOICE", "FINANCE", "STOCK"
+
+  roles         RolePermission[]
+}
+
+model RolePermission {
+  roleId        String
+  role          Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  
+  permissionId  String
+  permission    Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
 model Organization {
   id        String  @id @default(uuid())
   name      String
@@ -90,6 +132,11 @@ model Organization {
   banks     Bank[]
   safes     Safe[]
   payments  Payment[]
+  products  Product[]
+  stockMovements StockMovement[]
+  cheques   Cheque[]
+  roles     Role[]
+  zReports  ZReport[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -133,6 +180,9 @@ model FaturaSatir {
   faturaId String
   fatura   Fatura @relation(fields: [faturaId], references: [id], onDelete: Cascade)
 
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id])
+
   description String
   quantity    Decimal @db.Decimal(18, 4)
   unitPrice   Decimal @db.Decimal(18, 2)
@@ -167,6 +217,7 @@ model Cari {
 
   invoices Fatura[]
   payments Payment[]
+  cheques  Cheque[] // Added relation
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -392,4 +443,155 @@ model Payment {
 enum PaymentType {
   TAHSILAT // Collection (Inbound)
   ODEME    // Payment (Outbound)
+}
+
+// ==============================
+// CORE DOMAIN: STOCK
+// ==============================
+
+model Product {
+  id            String   @id @default(uuid())
+  orgId         String
+  organization  Organization @relation(fields: [orgId], references: [id])
+
+  name          String
+  code          String // SKU / Barcode - Unique per Org
+  type          ProductType @default(GOODS)
+  
+  vatRate       Int     @default(20)
+  unit          String  @default("Adet")
+  
+  buyPrice      Decimal @db.Decimal(18, 2) @default(0)
+  sellPrice     Decimal @db.Decimal(18, 2) @default(0)
+  currency      String  @default("TRY")
+
+  stockQuantity Decimal @db.Decimal(18, 4) @default(0)
+
+  movements     StockMovement[]
+  invoiceLines  FaturaSatir[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([orgId, code])
+}
+
+enum ProductType {
+  GOODS   // Mal
+  SERVICE // Hizmet
+}
+
+model StockMovement {
+  id            String   @id @default(uuid())
+  orgId         String
+  organization  Organization @relation(fields: [orgId], references: [id])
+
+  productId     String
+  product       Product @relation(fields: [productId], references: [id])
+
+  quantity      Decimal @db.Decimal(18, 4)
+  type          StockMovementType
+  
+  date          DateTime
+  
+  refId         String? // Invoice ID
+  refType       String? // "INVOICE", "ADJUSTMENT"
+
+  createdAt     DateTime @default(now())
+  
+  @@index([orgId, productId])
+  @@index([orgId, date])
+}
+
+enum StockMovementType {
+  IN
+  OUT
+}
+
+// ==============================
+// CORE DOMAIN: FINANCE (CHEQUE/PROMISSORY)
+// ==============================
+
+model Cheque {
+  id            String   @id @default(uuid())
+  orgId         String
+  organization  Organization @relation(fields: [orgId], references: [id])
+
+  // Instrument Details
+  chequeNo      String
+  bankName      String?
+  branchName    String?
+  accountNo     String?
+  drawer        String?  // Keşideci (Name on the cheque)
+  
+  amount        Decimal @db.Decimal(18, 2)
+  currency      String  @default("TRY")
+  
+  issueDate     DateTime // Keşide Tarihi
+  dueDate       DateTime // Vade Tarihi
+
+  type          ChequeType   @default(GELEN)
+  instrument    InstrumentType @default(CEK) // Added field
+  status        ChequeStatus @default(PORTFOY)
+
+  // Relations
+  cariId        String?
+  cari          Cari? @relation(fields: [cariId], references: [id])
+
+  // Tracking
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([orgId, status])
+  @@index([orgId, dueDate])
+}
+
+enum ChequeType {
+  GELEN // Müşteri Evrağı (Portföy)
+  GIDEN // Kendi Evrağımız (Borç)
+}
+
+enum InstrumentType {
+  CEK
+  SENET
+}
+
+enum ChequeStatus {
+  PORTFOY      // Elde / Portföyde
+  TAHSIL       // Tahsil Edildi (Bankaya/Kasaya girdi)
+  CIRO         // Ciro Edildi (Satıcıya verildi)
+  ODENDI       // Ödendi (Bizim çekimiz ise hesaptan düştü)
+  KARSILIKSIZ  // Karşılıksız Çıktı
+  IADE         // İade Edildi/Alındı
+}
+
+// ==============================
+// CORE DOMAIN: COMPLIANCE (Z-REPORT)
+// ==============================
+
+model ZReport {
+  id            String   @id @default(uuid())
+  orgId         String
+  organization  Organization @relation(fields: [orgId], references: [id])
+
+  date          DateTime // The actual date of the Z-Report (usually yesterday or today)
+  
+  imageUrl      String?  // URL to stored image
+  totalAmount   Decimal? @db.Decimal(18, 2)
+  vatTotal      Decimal? @db.Decimal(18, 2)
+  
+  status        ZReportStatus @default(PENDING)
+  
+  ocrData       Json?    // Raw OCR result
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([orgId, date]) // Only one Z-Report per day per org
+}
+
+enum ZReportStatus {
+  PENDING
+  PROCESSED
+  ERROR
 }

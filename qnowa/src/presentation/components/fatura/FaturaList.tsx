@@ -5,19 +5,24 @@ import Link from 'next/link';
 
 interface FaturaListProps {
     faturas: FaturaDTO[];
+    permissions?: string[];
 }
 
-export function FaturaList({ faturas }: FaturaListProps) {
+export function FaturaList({ faturas, permissions = [] }: FaturaListProps) {
+    const canCreate = permissions.includes('INVOICE_CREATE');
+
     if (faturas.length === 0) {
         return (
             <div className="text-center p-8 bg-gray-50 rounded-lg">
                 <p className="text-gray-500 mb-4">Henüz hiç fatura oluşturulmamış.</p>
-                <Link
-                    href="/dashboard/fatura/yeni"
-                    className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-                >
-                    Yeni Fatura Oluştur
-                </Link>
+                {canCreate && (
+                    <Link
+                        href="/dashboard/fatura/yeni"
+                        className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                    >
+                        Yeni Fatura Oluştur
+                    </Link>
+                )}
             </div>
         );
     }
@@ -26,12 +31,14 @@ export function FaturaList({ faturas }: FaturaListProps) {
         <div className="overflow-x-auto">
             <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold">Faturalar</h2>
-                <Link
-                    href="/dashboard/fatura/yeni"
-                    className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-                >
-                    Yeni Fatura
-                </Link>
+                {canCreate && (
+                    <Link
+                        href="/dashboard/fatura/yeni"
+                        className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                    >
+                        Yeni Fatura
+                    </Link>
+                )}
             </div>
             <table className="min-w-full bg-white border border-gray-200 shadow-sm rounded-lg overflow-hidden">
                 <thead className="bg-gray-50">

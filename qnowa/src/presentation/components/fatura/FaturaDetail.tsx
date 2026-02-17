@@ -7,13 +7,20 @@ import { useRouter } from 'next/navigation';
 
 interface FaturaDetailProps {
     fatura: FaturaDetailDTO;
-    userRole?: string; // Passed from server component
+    userRole?: string;
+    permissions?: string[];
 }
 
-export function FaturaDetail({ fatura, userRole }: FaturaDetailProps) {
+export function FaturaDetail({ fatura, userRole, permissions = [] }: FaturaDetailProps) {
     const router = useRouter();
     const [isFinalizing, setIsFinalizing] = useState(false);
     const [isDownloading, setIsDownloading] = useState(false);
+
+    // ... (rest of state)
+
+    // Permission checks
+    const canFinalize = fatura.status === 'TASLAK' && permissions.includes('INVOICE_APPROVE');
+    const canSend = fatura.status === 'ONAYLI' && permissions.includes('INVOICE_APPROVE'); // Or separate permission if needed
 
     const handleFinalize = async () => {
         if (!confirm('Faturayı muhasebeleştirmek üzeresiniz. Bu işlem geri alınamaz. Onaylıyor musunuz?')) return;
@@ -58,11 +65,35 @@ export function FaturaDetail({ fatura, userRole }: FaturaDetailProps) {
         }
     };
 
+    const [isSending, setIsSending] = useState(false);
+
+    const handleSendIntegrator = async () => {
+        if (!confirm('Fatura GİB/Entegratöre gönderilecek. Onaylıyor musunuz?')) return;
+
+        setIsSending(true);
+        try {
+            // Dynamically import action to avoid server-code leakage issues in some setups, but here we import top level
+            const { sendFaturaToIntegrator } = await import('@/infrastructure/actions/fatura.actions');
+            const result = await sendFaturaToIntegrator(fatura.id);
+
+            if (!result.success) {
+                alert('Hata: ' + result.message);
+            } else {
+                alert('Fatura başarıyla gönderildi!');
+                router.refresh();
+            }
+        } catch (e: any) {
+            console.error(e);
+            alert('Entegrasyon hatası: ' + e.message);
+        } finally {
+            setIsSending(false);
+        }
+    };
+
     // Role check logic (basic client-side check for UI)
     // Server action protects the actual operation.
-    const canFinalize = fatura.status === 'TASLAK' &&
-        ['ADMIN', 'ACCOUNTANT', 'USER'].includes(userRole || '');
-    // Simplified: RolePermissions mapping could be shared, but hardcoding for UI simple check is often easier or pass `permissions` array from server.
+    // const canFinalize = fatura.status === 'TASLAK' &&
+    //    ['ADMIN', 'ACCOUNTANT', 'USER'].includes(userRole || '');
 
     return (
         <div className="bg-white shadow overflow-hidden sm:rounded-lg">
@@ -95,6 +126,16 @@ export function FaturaDetail({ fatura, userRole }: FaturaDetailProps) {
                             className="bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 disabled:opacity-50"
                         >
                             {isFinalizing ? 'İşleniyor...' : 'Muhasebeleştir'}
+                        </button>
+                    )}
+
+                    {canSend && (
+                        <button
+                            onClick={handleSendIntegrator}
+                            disabled={isSending}
+                            className="bg-purple-600 text-white px-4 py-2 rounded text-sm hover:bg-purple-700 disabled:opacity-50"
+                        >
+                            {isSending ? 'Gönderiliyor...' : "GİB'e Gönder (QNB)"}
                         </button>
                     )}
                 </div>

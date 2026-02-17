@@ -2,6 +2,7 @@ import { Entity } from '../core/Entity';
 import { Money } from '../shared/value-objects/Money';
 
 interface FaturaSatirProps {
+    productId?: string;
     description: string;
     quantity: number;
     unitPrice: Money;
@@ -49,5 +50,9 @@ export class FaturaSatir extends Entity<FaturaSatirProps> {
 
     get description(): string {
         return this.props.description;
+    }
+
+    get productId(): string | undefined {
+        return this.props.productId;
     }
 }

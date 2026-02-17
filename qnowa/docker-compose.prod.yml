@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  app:
+    container_name: qnowa-app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://qnowa:${DB_PASSWORD:-postgres}@postgres:5432/qnowa
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      # Redis for Queues/Cache
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis}@redis:6379
+      # MinIO
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: ${MINIO_USER:-qnowa}
+      MINIO_SECRET_KEY: ${MINIO_PASSWORD:-minio123}
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME:-qnowa-uploads}
+    ports:
+      - "3000:3000"
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: qnowa-db
+    environment:
+      POSTGRES_DB: qnowa
+      POSTGRES_USER: qnowa
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U qnowa" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: qnowa-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis}", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    container_name: qnowa-storage
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER:-qnowa}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-minio123}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:

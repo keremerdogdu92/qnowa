@@ -2,16 +2,21 @@
 
 import { createFatura } from '@/infrastructure/actions/fatura.actions';
 import { CariDTO } from '@/infrastructure/actions/cari.actions';
-import { useFormState, useFormStatus } from 'react-dom';
-import { useState, useEffect } from 'react';
+import { useFormStatus } from 'react-dom';
+import { useState, useEffect, useRef, useActionState } from 'react'; // Updated import
 import { useRouter } from 'next/navigation';
 
 import { FaturaTipi } from '@/domain/invoice/Fatura';
 
+import { Product } from '@/domain/stock/Product';
+import { ExtractedData } from '@/domain/ocr/OCRInterfaces';
+
 interface FaturaFormProps {
     parties: CariDTO[];
+    products?: Product[];
     defaultType?: FaturaTipi;
     fixedType?: boolean;
+    ocrData?: ExtractedData | null; // Added ocrData
 }
 
 const initialState = {
@@ -32,14 +37,52 @@ function SubmitButton() {
     );
 }
 
-export function FaturaForm({ parties, defaultType = FaturaTipi.SATIS, fixedType = false }: FaturaFormProps) {
-    const [state, formAction] = useFormState(createFatura, initialState);
+export function FaturaForm({ parties, products = [], defaultType = FaturaTipi.SATIS, fixedType = false, ocrData }: FaturaFormProps) {
+    const [type, setType] = useState(defaultType); // Track type state for price selection
+    const [state, formAction, isPending] = useActionState(createFatura, initialState); // Updated hook usage
     const [lines, setLines] = useState([
-        { description: '', quantity: 1, unitPrice: 0, taxRate: 20, total: 0 }
+        { productId: '', description: '', quantity: 1, unitPrice: 0, taxRate: 20, total: 0 }
     ]);
     const [totals, setTotals] = useState({ subTotal: 0, taxTotal: 0, grandTotal: 0 });
 
+    // Inputs refs for uncontrolled components
+    const faturaNoRef = useRef<HTMLInputElement>(null);
+    const dateRef = useRef<HTMLInputElement>(null);
+
+    // Auto-fill from OCR
     useEffect(() => {
+        if (ocrData) {
+            console.log("Auto-filling form with OCR data:", ocrData);
+
+            if (faturaNoRef.current && ocrData.invoiceNo) {
+                faturaNoRef.current.value = ocrData.invoiceNo;
+            }
+            if (dateRef.current && ocrData.date) {
+                // Format Date to YYYY-MM-DD
+                const d = new Date(ocrData.date);
+                if (!isNaN(d.getTime())) {
+                    dateRef.current.value = d.toISOString().split('T')[0];
+                }
+            }
+
+            // Map OCR Lines to Form Lines
+            if (ocrData.lines && ocrData.lines.length > 0) {
+                const newLines = ocrData.lines.map((l: any) => ({ // Fix implicit any
+                    productId: '',
+                    description: l.description,
+                    quantity: l.quantity,
+                    unitPrice: l.unitPrice,
+                    taxRate: l.taxRate || 20,
+                    total: l.total
+                }));
+                setLines(newLines);
+            }
+        }
+    }, [ocrData]);
+
+
+    useEffect(() => {
+        // ... calculation logic same ...
         const subTotal = lines.reduce((acc, line) => acc + (line.quantity * line.unitPrice), 0);
         const taxTotal = lines.reduce((acc, line) => acc + (line.quantity * line.unitPrice * line.taxRate / 100), 0);
         setTotals({
@@ -50,9 +93,10 @@ export function FaturaForm({ parties, defaultType = FaturaTipi.SATIS, fixedType 
     }, [lines]);
 
     const addLine = () => {
-        setLines([...lines, { description: '', quantity: 1, unitPrice: 0, taxRate: 20, total: 0 }]);
+        setLines([...lines, { productId: '', description: '', quantity: 1, unitPrice: 0, taxRate: 20, total: 0 }]);
     };
 
+    // ... removeLine same ...
     const removeLine = (index: number) => {
         if (lines.length > 1) {
             const newLines = [...lines];
@@ -63,8 +107,18 @@ export function FaturaForm({ parties, defaultType = FaturaTipi.SATIS, fixedType 
 
     const updateLine = (index: number, field: string, value: any) => {
         const newLines = [...lines];
-        const line = { ...newLines[index], [field]: value };
-        // Recalculate line total for UI
+        let line = { ...newLines[index], [field]: value };
+
+        // Product Selection Logic
+        if (field === 'productId') {
+            const product = products.find(p => p.id === value);
+            if (product) {
+                line.description = product.name;
+                line.unitPrice = type === FaturaTipi.SATIS ? product.sellPrice : product.buyPrice;
+                line.taxRate = product.vatRate;
+            }
+        }
+
         line.total = line.quantity * line.unitPrice * (1 + line.taxRate / 100);
         newLines[index] = line;
         setLines(newLines);
@@ -72,6 +126,7 @@ export function FaturaForm({ parties, defaultType = FaturaTipi.SATIS, fixedType 
 
     return (
         <form action={formAction} className="bg-white p-6 rounded-lg shadow space-y-6">
+            {/* ... header and messages ... */}
             <h2 className="text-xl font-bold mb-4">Yeni Fatura</h2>
 
             {state.message && (
@@ -80,11 +135,21 @@ export function FaturaForm({ parties, defaultType = FaturaTipi.SATIS, fixedType 
                 </div>
             )}
 
+            {/* Use isPending from hook if desired, but SubmitButton inside can still use useFormStatus. 
+                However, useActionState provides isPending at top level which is nice. 
+                Let's pass isPending to button or just let the button handle itself. 
+                Existing code uses SubmitButton component with useFormStatus which works fine inside <form>.
+                Unchanged.
+            */}
+
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* ... existing fields ... */}
                 <div>
                     <label className="block text-sm font-medium text-gray-700">Fatura No</label>
                     <input
                         name="faturaNo"
+                        ref={faturaNoRef} // Add ref
                         type="text"
                         required
                         className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2"
@@ -96,6 +161,7 @@ export function FaturaForm({ parties, defaultType = FaturaTipi.SATIS, fixedType 
                     <label className="block text-sm font-medium text-gray-700">Tarih</label>
                     <input
                         name="date"
+                        ref={dateRef} // Add ref
                         type="date"
                         required
                         defaultValue={new Date().toISOString().split('T')[0]}
@@ -131,7 +197,8 @@ export function FaturaForm({ parties, defaultType = FaturaTipi.SATIS, fixedType 
                         <select
                             name="type"
                             required
-                            defaultValue={defaultType}
+                            value={type}
+                            onChange={(e) => setType(e.target.value as FaturaTipi)}
                             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2"
                         >
                             <option value="SATIS">Satış Faturası</option>
@@ -151,8 +218,21 @@ export function FaturaForm({ parties, defaultType = FaturaTipi.SATIS, fixedType 
 
                 <div className="space-y-2">
                     {lines.map((line, index) => (
-                        <div key={index} className="flex gap-2 items-end bg-gray-50 p-3 rounded">
-                            <div className="flex-grow">
+                        <div key={index} className="flex gap-2 items-end bg-gray-50 p-3 rounded flex-wrap md:flex-nowrap">
+                            <div className="w-full md:w-48">
+                                <label className="block text-xs text-gray-500">Ürün / Hizmet Seç</label>
+                                <select
+                                    value={line.productId || ''}
+                                    onChange={(e) => updateLine(index, 'productId', e.target.value)}
+                                    className="w-full text-sm border-gray-300 rounded p-1 border"
+                                >
+                                    <option value="">Seçiniz...</option>
+                                    {products.map(p => (
+                                        <option key={p.id} value={p.id}>{p.code} - {p.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="flex-grow min-w-[150px]">
                                 <label className="block text-xs text-gray-500">Açıklama</label>
                                 <input
                                     value={line.description}
@@ -162,7 +242,7 @@ export function FaturaForm({ parties, defaultType = FaturaTipi.SATIS, fixedType 
                                     placeholder="Hizmet / Ürün"
                                 />
                             </div>
-                            <div className="w-24">
+                            <div className="w-20">
                                 <label className="block text-xs text-gray-500">Miktar</label>
                                 <input
                                     value={line.quantity}
@@ -182,8 +262,8 @@ export function FaturaForm({ parties, defaultType = FaturaTipi.SATIS, fixedType 
                                     className="w-full text-sm border-gray-300 rounded p-1 border"
                                 />
                             </div>
-                            <div className="w-20">
-                                <label className="block text-xs text-gray-500">KDV %</label>
+                            <div className="w-16">
+                                <label className="block text-xs text-gray-500">KDV</label>
                                 <input
                                     value={line.taxRate}
                                     onChange={(e) => updateLine(index, 'taxRate', parseFloat(e.target.value) || 0)}

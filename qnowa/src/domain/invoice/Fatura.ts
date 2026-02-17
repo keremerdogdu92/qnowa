@@ -133,6 +133,14 @@ export class Fatura extends AggregateRoot<FaturaProps> {
         (this.props as any).updatedAt = new Date();
     }
 
+    public gonderildi(): void {
+        if (this.props.status !== FaturaDurumu.ONAYLI) {
+            throw new Error('Sadece onaylı faturalar gönderilebilir');
+        }
+        (this.props as any).status = FaturaDurumu.GONDERILDI;
+        (this.props as any).updatedAt = new Date();
+    }
+
     private recalculateTotals(): void {
         let sub = 0;
         let tax = 0;

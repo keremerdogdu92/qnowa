@@ -18,10 +18,11 @@ export default async function FaturaDetailPage({ params }: PageProps) {
     }
 
     const userRole = (session?.user as any)?.role;
+    const permissions = (session?.user as any)?.permissions || [];
 
     return (
         <div className="max-w-4xl mx-auto p-6">
-            <FaturaDetail fatura={fatura} userRole={userRole} />
+            <FaturaDetail fatura={fatura} userRole={userRole} permissions={permissions} />
         </div>
     );
 }

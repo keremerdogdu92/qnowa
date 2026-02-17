@@ -38,15 +38,27 @@ export default async function DashboardLayout({
                     <NavLink href="/dashboard/muhasebe/mizan">Mizan Raporu</NavLink>
 
                     <div className="pt-4 pb-1">
-                        <p className="px-2 text-xs font-semibold text-gray-400 uppercase">Finans</p>
+                        <p className="px-2 text-xs font-semibold text-gray-400 uppercase">Finans & Stok</p>
                     </div>
+                    <NavLink href="/dashboard/stok/urunler">Stok & Ürünler</NavLink>
                     <NavLink href="/dashboard/finans/kasa-banka">Kasa & Banka</NavLink>
+                    <NavLink href="/dashboard/finance/cheques">Çek & Senetler</NavLink>
                     <NavLink href="/dashboard/finans/hareketler/yeni">Tahsilat / Ödeme</NavLink>
+
 
                     <div className="pt-4 pb-1">
                         <p className="px-2 text-xs font-semibold text-gray-400 uppercase">Raporlar</p>
                     </div>
                     <NavLink href="/dashboard/raporlar/gelir-gider">Gelir / Gider (P&L)</NavLink>
+
+                    {((session.user as any)?.permissions || []).includes('SETTINGS_MANAGE') && (
+                        <>
+                            <div className="pt-4 pb-1">
+                                <p className="px-2 text-xs font-semibold text-gray-400 uppercase">Ayarlar</p>
+                            </div>
+                            <NavLink href="/dashboard/settings/roles">Roller & Yetkiler</NavLink>
+                        </>
+                    )}
                 </nav>
 
                 <div className="p-4 border-t">
